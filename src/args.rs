@@ -41,12 +41,4 @@ pub struct Args {
     #[arg(long, default_value_t = 16384)]
     pub block_size: usize,
 
-    #[arg(long)]
-    pub mqtt_server: Option<String>,
-
-    #[arg(long, default_value_t = 1883)]
-    pub mqtt_port: u16,
-
-    #[arg(long, default_value_t = String::from("wize"))]
-    pub mqtt_topic: String,
 }
