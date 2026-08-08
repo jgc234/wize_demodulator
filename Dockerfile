@@ -14,7 +14,7 @@ RUN cargo build \
 FROM scratch
 
 COPY --from=builder \
-    /app/target/x86_64-unknown-linux-musl/release/rtl_pipeline \
-    /rtl_pipeline
+    /app/target/x86_64-unknown-linux-musl/release/wize_demodulator \
+    /wize_demodulator
 
-ENTRYPOINT ["/rtl_pipeline"]
+ENTRYPOINT ["/wize_demodulator"]
