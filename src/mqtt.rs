@@ -32,6 +32,7 @@ impl MqttPublisher {
 
         let mut mqttoptions = MqttOptions::new("rumqtt-sync", mqtt_server, mqtt_port);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
+        mqttoptions.set_clean_session(false);
 
         let (client, mut connection) = Client::new(mqttoptions, 10);
 
@@ -90,7 +91,7 @@ impl MqttPublisher {
         };
         log::debug!("Publishing telemetry: {}", String::from_utf8_lossy(&json));
 
-        match self.client.publish(&self.topic, QoS::AtLeastOnce, false, json) {
+        match self.client.publish(&self.topic, QoS::AtLeastOnce, true, json) {
             Ok(_) => {},
             Err(e) => {
                 log::error!("Failed to publish telemetry: {}", e);
