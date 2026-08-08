@@ -106,7 +106,7 @@ fn main() -> Result<()> {
     let preamble_len = 32;
     let block_size = args.block_size;
 
-    log::info!("rtl_pipeline Info:");
+    log::info!("wize_demodulator Info:");
     log::info!("  SDR Sample Rate: {} Hz", sdr_sample_rate);
     log::info!("  SDR Center Frequency: {} Hz", sdr_center_freq);
     log::info!("  Block size: {} samples", block_size);
