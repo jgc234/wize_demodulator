@@ -3,7 +3,6 @@ mod iq;
 mod iq_writer;
 mod rtl_tcp;
 mod dsp;
-mod mqtt;
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
@@ -20,6 +19,7 @@ use dsp::FrameResult;
 use dsp::SampleBlock;
 use std::io::Write;
 use chrono::Local;
+use std::fs::OpenOptions;
 
 
 enum InputSource {
@@ -28,7 +28,7 @@ enum InputSource {
 }
 
 enum OutputSource {
-    Mqtt(mqtt::MqttPublisher),
+    File(File),
     None,
 }
 
@@ -85,16 +85,17 @@ fn main() -> Result<()> {
         )
     };
 
-    let mut output = if let Some(mqtt_server) = args.mqtt_server.as_ref() {
-        log::info!("Publishing to MQTT server {}:{}", mqtt_server, args.mqtt_port);
-        let publisher = mqtt::MqttPublisher::new(
-            mqtt_server,
-            args.mqtt_port,
-            args.mqtt_topic,
-        ).map_err(|e| anyhow!("Failed to initialize MQTT publisher: {}", e))?;
-        OutputSource::Mqtt(publisher)
-    } else {
-        OutputSource::None
+    
+    let mut output: OutputSource = match args.output_file.as_ref() {
+        Some(path) => {
+            log::info!("Writing JSON output to {}", path.display());
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)?;
+            OutputSource::File(file)
+        }
+        None => OutputSource::None,
     };
 
     let sdr_sample_rate = sdr_sample_rate;
@@ -157,8 +158,11 @@ fn main() -> Result<()> {
     let _ = thread::spawn(move || {
         while let Ok(result) = result_rx.recv() {
             match &mut output {
-                OutputSource::Mqtt(mqtt) => mqtt.publish(&result),
                 OutputSource::None => {},
+                OutputSource::File(json_output) => {
+                    let json = serde_json::to_string(&result).unwrap();
+                    writeln!(json_output, "{}", json).unwrap();
+                }
             }
         }
     });

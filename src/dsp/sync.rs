@@ -334,10 +334,10 @@ impl Sync {
                       
                         let result = Some(FrameResult{
                             channel: self.channel,
-                            timestamp_ms: chrono::Local::now().timestamp_millis() as u64, // TODO - technically incorrect.
-                            frame: self.byte_buffer.clone(),
+                            timestamp: chrono::Local::now().timestamp_millis() as u64, // TODO - technically incorrect.
+                            packet_len: self.byte_buffer.len() as u32,
+                            data: self.byte_buffer.clone(),
                             snr: snr,
-                            time_offset: self.time_offset, // TODO - technically incorrect - this is not the time offset at the start of the frame
                             crc_valid: crc_ok,
                             hamming_ratio: sync_match.hamming_ratio,
                             power_db: power_db,

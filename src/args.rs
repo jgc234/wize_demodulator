@@ -41,4 +41,6 @@ pub struct Args {
     #[arg(long, default_value_t = 16384)]
     pub block_size: usize,
 
+    #[arg(long)]
+    pub output_file: Option<PathBuf>,
 }

@@ -7,6 +7,7 @@ pub use wize_demod::WizeDemodulator;
 use std::sync::Arc;
 use std::fmt;
 use std::fmt::Write;
+use serde;
 
 use num_complex::Complex32;
 
@@ -24,13 +25,13 @@ pub trait RealBlock {
     );
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize)]
 pub struct FrameResult {
+    pub timestamp: u64,
+    pub packet_len: u32,
     pub channel: u32,
-    pub timestamp_ms: u64,
-    pub frame: Vec<u8>,
+    pub data: Vec<u8>,
     pub snr: f32,
-    pub time_offset: f32,
     pub crc_valid: bool,
     pub hamming_ratio: f32,
     pub power_db: f32,
@@ -38,21 +39,19 @@ pub struct FrameResult {
 }
 
 
-
 impl fmt::Debug for FrameResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 
-        let mut hex_string = String::with_capacity(self.frame.len() * 2);
-        for b in &self.frame {
+        let mut hex_string = String::with_capacity(self.data.len() * 2);
+        for b in &self.data {
             write!(&mut hex_string, "{:02x}", b).unwrap();
         }
 
         write!(
             f,
-            "FrameResult {{ channel: {}, timestamp_ms: {}, time_offset: {:10.5}, crc_valid: {:5}, hamming_ratio: {:5.3}, snr: {:6.3}, power_db: {:6.3}, noise_db: {:6.3}, frame: {}",
+            "FrameResult {{ channel: {}, timestamp: {}, crc_valid: {:5}, hamming_ratio: {:5.3}, snr: {:6.3}, power_db: {:6.3}, noise_db: {:6.3}, data: {}",
             self.channel,
-            self.timestamp_ms,
-            self.time_offset,
+            self.timestamp,
             self.crc_valid,
             self.hamming_ratio,
             self.snr,
