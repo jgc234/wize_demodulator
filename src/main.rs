@@ -205,7 +205,7 @@ fn main() -> Result<()> {
             log::info!("{} samples processed in {:.3} seconds, sample rate: {:.3} samples/sec, block_counter={}",
                 delta_samples, delta_time, sample_rate, block_counter);
             previous_raw_sample_counter = raw_sample_counter;
-            previous_check_time = previous_check_time + std::time::Duration::from_secs(10);
+            previous_check_time = now;
         }
     }
 
