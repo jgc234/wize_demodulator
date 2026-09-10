@@ -117,14 +117,9 @@ impl Sync {
 
     pub fn update(&mut self, time_offset: f32, sample_counter: u64, sample: f32, iq_sample: Complex32) -> Option<FrameResult> {
 
-        let adjusted_sample = match self.sync_details {
-            Some(sync_match) => sample - sync_match.signal_deviation,
-            None => sample,
-        };
+        let value = if sample > 0.0 { 1 } else { 0 };
 
-        let value = if adjusted_sample > 0.0 { 1 } else { 0 };
-
-        self.demod_buffer.push_back(adjusted_sample);
+        self.demod_buffer.push_back(sample);
         self.binary_buffer.push_back(value);
         self.iq_buffer.push_back(iq_sample);
         self.power_buffer.push_back(self.floor_power);
@@ -237,7 +232,7 @@ impl Sync {
                 let syncmatch = SyncMatch {
                     hamming_ratio: hamming_ratio,
                     match_index: self.matchlist.len(),
-                    signal_deviation: self.calculcate_preamble_deviation(),
+                    signal_deviation: self.calculate_preamble_deviation(),
                     power_count: self.iq_buffer.len(),
                     power_sum: self.iq_buffer.iter().map(|s| s.norm_sqr()).sum(),
                     saved_floor_power: self.power_buffer[0],
@@ -370,9 +365,10 @@ impl Sync {
     }
 
     // calculate the average deviation of the preamble samples from zero.  This is used to correct for 
-    // for "frequency offset".
+    // for "frequency offset".  So it turns out this was a nice idea, but the offset looks like its on a per transmitter basis,
+    // rather than the local receiver.
 
-    fn calculcate_preamble_deviation(&self) -> f32 {
+    fn calculate_preamble_deviation(&self) -> f32 {
 
         let mut negative_sum = 0.0;
         let mut positive_sum = 0.0;
@@ -391,7 +387,7 @@ impl Sync {
 
         let negative_avg = if negative_count > 0 { negative_sum / negative_count as f32 } else { 0.0 };
         let positive_avg = if positive_count > 0 { positive_sum / positive_count as f32 } else { 0.0 };
-        let deviation = (positive_avg + negative_avg) / 2.0;
+        let deviation = positive_avg + negative_avg;
 
         deviation
 
