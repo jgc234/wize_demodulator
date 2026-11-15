@@ -20,7 +20,7 @@ use dsp::FrameResult;
 use dsp::SampleBlock;
 use std::io::Write;
 use chrono::Local;
-
+use dsp::xfirdec::FreqTranslatingDirDecimator;
 
 enum InputSource {
     Rtl(rtl_tcp::RtlTcp),
@@ -97,25 +97,61 @@ fn main() -> Result<()> {
         OutputSource::None
     };
 
-    let sdr_sample_rate = sdr_sample_rate;
-    let cutoff_freq = args.cutoff_freq;
-    let decimation_factor = args.decimation_factor;
-    let symbol_rate = 2_400;
-    let ntaps = args.ntaps;
+
+    let stage1_offset = 37_500;
+    let stage1_cutoff_freq = 50_000;
+    let stage1_decimation_factor = 8;
+    let stage1_ntaps = 513;
+    let stage1_sample_rate = sdr_sample_rate;
+
+    let stage2_centre_freq = sdr_center_freq + stage1_offset;
+    let stage2_sample_rate = stage1_sample_rate / stage1_decimation_factor;
+    let stage2_cutoff_freq = 5_000;
+    let stage2_decimation_factor = 4;
+    let stage2_symbol_rate = 2_400;
+    let stage2_ntaps = 257;
+
+    let stage3_sample_rate = stage2_sample_rate / stage2_decimation_factor;
+
     let preamble = 0x5555F672;
     let preamble_len = 32;
-    let block_size = args.block_size;
-
+    let block_size = 16_384;
+    
     log::info!("wize_demodulator Info:");
-    log::info!("  SDR Sample Rate: {} Hz", sdr_sample_rate);
-    log::info!("  SDR Center Frequency: {} Hz", sdr_center_freq);
-    log::info!("  Block size: {} samples", block_size);
-    log::info!("  Cutoff Frequency: {} Hz", cutoff_freq);
-    log::info!("  Decimation Factor: {}", decimation_factor);
-    log::info!("  Symbol Rate: {} Hz", symbol_rate);
-    log::info!("  Number of FIR Taps: {}", ntaps);
+    log::info!("  stage1 SDR Sample Rate: {} Hz", stage1_sample_rate);
+    log::info!("  stage1 Cutoff Frequency: {} Hz", stage1_cutoff_freq);
+    log::info!("  stage1 Decimation Factor: {}", stage1_decimation_factor);
+    log::info!("  stage1 Number of FIR Taps: {}", stage1_ntaps);
+    log::info!("  stage1 Center Frequency: {} Hz", stage1_offset);
+    log::info!("  --");
+    log::info!("  stage2 SDR Sample Rate: {} Hz", stage2_sample_rate);
+    log::info!("  stage2 Center Frequency: {} Hz", stage2_centre_freq);
+    log::info!("  stage2 Symbol Rate: {} Hz", stage2_symbol_rate);
+    log::info!("  stage2 Number of FIR Taps: {}", stage2_ntaps);
+    log::info!("  stage2 Cutoff Frequency: {} Hz", stage2_cutoff_freq);
+    log::info!("  stage2 Decimation Factor: {}", stage2_decimation_factor);
+    log::info!("  --");
+    log::info!("  stage3 sample rate: {} Hz", stage3_sample_rate);
+    log::info!("  Symbol Rate: {} Hz", stage2_symbol_rate);
     log::info!("  Preamble: {:#X}", preamble);
     log::info!("  Preamble Length: {} bits", preamble_len);
+    log::info!("  Block size: {} samples", block_size);
+
+    assert!(stage1_sample_rate % stage1_decimation_factor == 0, "Sample rate must be divisible by stage_decimator_factor");
+    assert!(stage1_sample_rate % stage2_symbol_rate == 0, "Post-decimation sample rate must be divisible by symbol rate");
+    assert!(stage1_sample_rate / stage1_decimation_factor > 0, "Samples per symbol must be greater than 0");
+    assert!(stage1_ntaps > 0, "Number of FIR taps must be greater than 0");
+    assert!(preamble_len > 0, "Preamble length must be greater than 0");
+    assert!(preamble < (1 << preamble_len), "Preamble value must fit within preamble length");
+    
+    let mut stage1_fir = FreqTranslatingDirDecimator::new(
+        stage1_offset as f32, //center_freq,
+        stage1_decimation_factor as usize, //decimation,
+        stage1_cutoff_freq as f32, // cutoff_freq,
+        stage1_ntaps, //ntaps,
+        sdr_sample_rate as f32,
+    );
+
 
     struct Worker {
         tx: mpsc::SyncSender<SampleBlock>,
@@ -135,12 +171,12 @@ fn main() -> Result<()> {
 
             let mut wize_demod = WizeDemodulator::new(
                 wize_channel,
-                cutoff_freq,
-                decimation_factor,
-                sdr_sample_rate,
-                sdr_center_freq,
-                symbol_rate,
-                ntaps,
+                stage2_cutoff_freq,
+                stage2_decimation_factor,
+                stage2_sample_rate,
+                stage2_centre_freq,
+                stage2_symbol_rate,
+                stage2_ntaps,
                 preamble,
                 preamble_len,
             );
@@ -170,6 +206,7 @@ fn main() -> Result<()> {
     let mut raw_sample_counter: u64 = 0;
     let mut block_counter: u64 = 0;
 
+
     loop {
         block_counter += 1;
 
@@ -180,11 +217,14 @@ fn main() -> Result<()> {
         }
 
         let mut samples = Vec::<Complex32>::with_capacity(raw.len() / 2);
+        let mut stage2_samples = Vec::<Complex32>::with_capacity(raw.len() / 2 / stage1_decimation_factor as usize);
 
         iq::iq_to_complex(&raw, &mut samples);
         raw_sample_counter += samples.len() as u64;
 
-        let block = Arc::new(samples);
+        stage1_fir.process(&samples, &mut stage2_samples);
+
+        let block = Arc::new(stage2_samples);
 
         for worker in &workers {
             worker.tx.send(block.clone()).unwrap();
@@ -198,7 +238,7 @@ fn main() -> Result<()> {
         if delta_time >= 10.0 {
             let delta_samples = raw_sample_counter - previous_raw_sample_counter;
             let sample_rate = delta_samples as f32 / delta_time;
-            log::info!("{} samples processed in {:.3} seconds, sample rate: {:.3} samples/sec, block_counter={}",
+            log::debug!("{} samples processed in {:.3} seconds, sample rate: {:.3} samples/sec, block_counter={}",
                 delta_samples, delta_time, sample_rate, block_counter);
             previous_raw_sample_counter = raw_sample_counter;
             previous_check_time = previous_check_time + std::time::Duration::from_secs(10);

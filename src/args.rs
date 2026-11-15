@@ -29,18 +29,6 @@ pub struct Args {
     #[arg(long, default_value_t = 0)]
     pub ppm: i32,
 
-    #[arg(long, default_value_t = 1025)]
-    pub ntaps: usize,
-
-    #[arg(long, default_value_t = 3000)]
-    pub cutoff_freq: u32,
-
-    #[arg(long, default_value_t = 32)]
-    pub decimation_factor: u32,
-
-    #[arg(long, default_value_t = 16384)]
-    pub block_size: usize,
-
     #[arg(long)]
     pub mqtt_server: Option<String>,
 
@@ -49,4 +37,7 @@ pub struct Args {
 
     #[arg(long, default_value_t = String::from("wize"))]
     pub mqtt_topic: String,
+
+    #[arg(short, long)]
+    pub passive: bool,
 }

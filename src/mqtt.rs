@@ -30,7 +30,7 @@ impl MqttPublisher {
 
     pub fn new(mqtt_server: &str, mqtt_port: u16, mqtt_topic: String) -> Result<Self, String> {
 
-        let mut mqttoptions = MqttOptions::new("rumqtt-sync", mqtt_server, mqtt_port);
+        let mut mqttoptions = MqttOptions::new("mac", mqtt_server, mqtt_port);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
         mqttoptions.set_clean_session(false);
 

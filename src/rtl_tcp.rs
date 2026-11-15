@@ -10,17 +10,17 @@ use crate::args::Args;
 const CMD_SET_FREQUENCY: u8             = 0x01;
 const CMD_SET_SAMPLE_RATE: u8           = 0x02;
 const CMD_SET_GAIN_MODE: u8             = 0x03;
-const _CMD_SET_GAIN: u8                  = 0x04;
+const _CMD_SET_GAIN: u8                 = 0x04;
 const CMD_SET_FREQUENCY_CORRECTION: u8  = 0x05;
-const _CMD_SET_IF_STAGE: u8              = 0x06;
-const _CMD_SET_TEST_MODE: u8             = 0x07;
+const _CMD_SET_IF_STAGE: u8             = 0x06;
+const _CMD_SET_TEST_MODE: u8            = 0x07;
 const CMD_SET_AGC_MODE: u8              = 0x08;
 const CMD_SET_DIRECT_SAMPLING: u8       = 0x09;
 const CMD_SET_OFFSET_TUNING: u8         = 0x0A;
-const _CMD_SET_RTL_CRYSTAL: u8           = 0x0B;
-const _CMD_SET_TUNER_CRYSTAL: u8         = 0x0C;
+const _CMD_SET_RTL_CRYSTAL: u8          = 0x0B;
+const _CMD_SET_TUNER_CRYSTAL: u8        = 0x0C;
 const CMD_SET_TUNER_GAIN_BY_INDEX: u8   = 0x0D;
-const _CMD_SET_FREQ_HI32: u8             = 0x56;
+const _CMD_SET_FREQ_HI32: u8            = 0x56;
 
 pub struct RtlTcp {
     stream: TcpStream,
@@ -47,25 +47,25 @@ impl RtlTcp {
         let tuner = u32::from_be_bytes(header[4..8].try_into().unwrap());
         let gain_count = u32::from_be_bytes(header[8..12].try_into().unwrap());
 
-        info!(
-            "RTL header: magic={} tuner={} gain_count={}",
-            magic, tuner, gain_count
-        );
+        info!("RTL header: magic={} tuner={} gain_count={}", magic, tuner, gain_count);
 
-        send_cmd(&mut stream, CMD_SET_OFFSET_TUNING, 0)?;
-        send_cmd(&mut stream, CMD_SET_GAIN_MODE, 1)?;
-        send_cmd(&mut stream, CMD_SET_TUNER_GAIN_BY_INDEX, args.gain as u32)?;
-        send_cmd(&mut stream, CMD_SET_FREQUENCY, args.frequency)?;
-        send_cmd(&mut stream, CMD_SET_SAMPLE_RATE, args.sample_rate)?;
-        send_cmd(&mut stream, CMD_SET_FREQUENCY_CORRECTION, args.ppm as u32)?;
-        send_cmd(&mut stream, CMD_SET_AGC_MODE, 0)?;
-        send_cmd(&mut stream, CMD_SET_DIRECT_SAMPLING, 0)?;
+        if !args.passive {
 
-        info!("RTL-TCP configuration sent");
+            send_cmd(&mut stream, CMD_SET_OFFSET_TUNING, 0)?;
+            send_cmd(&mut stream, CMD_SET_GAIN_MODE, 1)?;
+            send_cmd(&mut stream, CMD_SET_TUNER_GAIN_BY_INDEX, args.gain as u32)?;
+            send_cmd(&mut stream, CMD_SET_FREQUENCY, args.frequency)?;
+            send_cmd(&mut stream, CMD_SET_SAMPLE_RATE, args.sample_rate)?;
+            send_cmd(&mut stream, CMD_SET_FREQUENCY_CORRECTION, args.ppm as u32)?;
+            send_cmd(&mut stream, CMD_SET_AGC_MODE, 0)?;
+            send_cmd(&mut stream, CMD_SET_DIRECT_SAMPLING, 0)?;
+
+            info!("RTL-TCP configuration sent");
+        }
 
         Ok(Self { stream, sample_rate: args.sample_rate, center_freq: args.frequency })
     }
-
+    
     pub fn read_samples(&mut self, buffer: &mut [u8]) -> Result<()> {
         self.stream.read_exact(buffer)?;
         Ok(())

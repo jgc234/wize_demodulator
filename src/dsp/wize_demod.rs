@@ -113,7 +113,7 @@ impl WizeDemodulator {
             let raw_sample_rate = delta_raw_samples as f32 / (now - self.previous_check_time).as_secs_f32();
             let post_sample_rate = delta_post_samples as f32 / (now - self.previous_check_time).as_secs_f32();
 
-            log::info!("[{}] Stats: time_offset={:.6}s, raw_sample_rate={:.2} samples/s, post_decimated_sample_rate={:.2} samples/s",
+            log::debug!("[{}] Stats: time_offset={:.6}s, raw_sample_rate={:.2} samples/s, post_decimated_sample_rate={:.2} samples/s",
                 self.channel,
                 time_offset,
                 raw_sample_rate,

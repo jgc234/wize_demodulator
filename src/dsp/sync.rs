@@ -31,6 +31,7 @@ pub struct Sync {
     matchlist: Vec<SyncMatch>,
     bit_buffer: Vec<u8>,
     byte_buffer: Vec<u8>,
+    //sample_buffer: Vec<f32>,
     sync_details: Option<SyncMatch>,
     sample_counter: u64,
     time_offset: f32,
@@ -107,6 +108,7 @@ impl Sync {
             matchlist: Vec::new(),
             bit_buffer: Vec::new(),
             byte_buffer: Vec::new(),
+            //sample_buffer: Vec::new(),
             sync_details: None,
             sample_counter: 0,
             time_offset: 0.0,
@@ -130,6 +132,7 @@ impl Sync {
         match self.sync_details {
             Some(mut sync_match) => {
                 sync_match.update_power(iq_sample);
+                //self.sample_buffer.push(sample);
                 self.process_sync()
             },
             None => {
@@ -345,6 +348,9 @@ impl Sync {
 
                         self.print_stats();
 
+                        //self.write_sample_buffer_to_file();
+                        //self.sample_buffer.clear();
+
                         return result;
                     }
                 }
@@ -392,5 +398,7 @@ impl Sync {
         deviation
 
     }
+
+    // write sample buffer as small csv file.
 
 }
