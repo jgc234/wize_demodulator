@@ -40,4 +40,13 @@ pub struct Args {
 
     #[arg(short, long)]
     pub passive: bool,
+
+    // Optional GPS serial device path for location.
+    #[arg(long)]
+    pub gps: Option<String>,
+
+    // Optional GPS serial baud rate (default: 9600)
+    #[arg(long, default_value_t = 9600)]
+    pub gps_baud: u32,
+
 }

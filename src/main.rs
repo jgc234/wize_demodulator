@@ -4,6 +4,7 @@ mod iq_writer;
 mod rtl_tcp;
 mod dsp;
 mod mqtt;
+mod gps;
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
@@ -29,6 +30,11 @@ enum InputSource {
 
 enum OutputSource {
     Mqtt(mqtt::MqttPublisher),
+    None,
+}
+
+enum GpsSource {
+    SharedGps(gps::SharedGps),
     None,
 }
 
@@ -96,6 +102,31 @@ fn main() -> Result<()> {
     } else {
         OutputSource::None
     };
+
+    let gps = if let Some(gps_device) = args.gps.as_ref() {
+        log::info!("Starting GPS thread on device {}", gps_device);
+        let shared_gps = gps::start_gps_thread(gps_device, args.gps_baud);
+        GpsSource::SharedGps(shared_gps)
+    } else {
+        GpsSource::None
+    };
+
+    
+
+    // In another thread:
+    //let gps_position = {
+    //    gps.read().unwrap().clone()
+    //};
+
+    //if let Some(pos) = gps_position {
+    //    println!(
+    //        "GPS: {}, {}",
+    //        pos.latitude,
+    //        pos.longitude
+    //    );
+    //}
+
+    // 
 
 
     let stage1_offset = 37_500;
