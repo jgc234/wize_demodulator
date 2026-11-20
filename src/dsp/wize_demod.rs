@@ -34,7 +34,7 @@ impl WizeDemodulator {
         let offset_freq = channel_freq as i32 - input_center_freq as i32;
 
         assert!(input_sample_rate % decimation_factor == 0, "Sample rate must be divisible by stage_decimator_factor");
-        assert!(output_sample_rate % symbol_rate == 0, "Post-decimation sample rate must be divisible by symbol rate");
+        //assert!(output_sample_rate % symbol_rate == 0, "Post-decimation sample rate must be divisible by symbol rate");
         assert!(samples_per_symbol > 0.0, "Samples per symbol must be greater than 0");
         assert!(ntaps > 0, "Number of FIR taps must be greater than 0");
         assert!(preamble_len > 0, "Preamble length must be greater than 0");
@@ -43,7 +43,7 @@ impl WizeDemodulator {
         // this is the pipeline.. translate frequency, decimate, demodulate, sync, crc check, output frame
         let fir = xfirdec::FreqTranslatingDirDecimator::new(offset_freq as f32, decimation_factor as usize, cutoff_freq as f32, ntaps, input_sample_rate as f32);
         let demod = fsk_demod::FskDemod::new();
-        let sync = sync::Sync::new(channel, preamble, preamble_len, samples_per_symbol);
+        let sync = sync::Sync::new(channel, samples_per_symbol);
  
         Self {
             channel,
