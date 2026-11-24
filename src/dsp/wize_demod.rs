@@ -1,6 +1,6 @@
 
 use num_complex::Complex32;
-use crate::dsp::{FrameResult, RealBlock, SampleBlock, fsk_demod, sync, xfirdec};
+use crate::dsp::{DemodSample, FrameResult, RealBlock, SampleBlock, fsk_demod, sync, xfirdec};
 
 pub struct WizeDemodulator {
     channel: u32,
@@ -11,7 +11,7 @@ pub struct WizeDemodulator {
     fir: xfirdec::FreqTranslatingDirDecimator,
     demod: fsk_demod::FskDemod,
     sync: sync::Sync,
-    demod_output: Vec<f32>,
+    demod_output: Vec<DemodSample>,
     fir_output: Vec<Complex32>,
 }
 

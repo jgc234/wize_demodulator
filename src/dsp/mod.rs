@@ -22,7 +22,7 @@ pub trait RealBlock {
     fn process(
         &mut self,
         input: &[Complex32],
-        output: &mut Vec<f32>,
+        output: &mut Vec<DemodSample>,
     );
 }
 
@@ -40,6 +40,12 @@ pub struct FrameResult {
     pub noise_db: f32,
     pub gps_lat: Option<f64>,
     pub gps_lon: Option<f64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DemodSample {
+    iq: Complex32,
+    discriminator: f32,
 }
 
 

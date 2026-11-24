@@ -55,12 +55,12 @@ pub fn start_gps_thread(device: &str, baud: u32) -> SharedGps {
                             }
                         }
                     }
-                }
+                },
                 Err(ref e)
                     if e.kind() == std::io::ErrorKind::TimedOut =>
                 {
                     continue;
-                }
+                },
                 Err(e) => {
                     eprintln!("GPS read error: {e}");
                     break;

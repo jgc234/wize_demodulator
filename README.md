@@ -44,3 +44,22 @@ You will need an RTL-SDR dongle, and RTL-TCP configured first.  That sample rate
 ```bash
 ./target/release/rtl_pipeline --addr=10.0.0.23:1234 --gain=23 --ppm=-4 --mqtt-server=mqtt.example.org --mqtt-topic=wmbus/pdu
 ```
+
+### Flow state for synchroniser
+
+```mermaid
+flowchart TB
+    searching --> preamble
+    preamble --> sync
+    sync --> frame
+
+    preamble --> searching
+    sync --> searching
+    frame --> searching
+
+    searching --> searching
+    preamble --> preamble
+    sync --> sync
+    frame --> frame
+```
+
