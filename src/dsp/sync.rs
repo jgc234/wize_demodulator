@@ -189,7 +189,7 @@ impl Sync {
         let hamming_rate = preamble_hamming_distance as f32 / self.preamble_bit_vec.len() as f32;
 
         log::info!("    [{}] Preamble offset {:04} - symbol_0 - ε{:2} ◀{:+.4} ▶{:+.4} μ{:+.4}, ramp {:+.4}, symbol_1 - ε{:2} ◀{:+.4} ▶{:+.4} μ{:+.4} ramp {:+.4}, overall  - ε{:2} ◀{:+.4} ▶{:+.4} μ{:+.4} ramp Δ{:+.4} abs Δ{:+.4}",
-            self.channel, self.buffer_offset,
+            self.channel, self.search_offset,
             symbol_0_hamming_distance, symbol_0_leading_avg, symbol_0_trailing_avg, symbol_0_dc_offset, symbol_0_ramp,
             symbol_1_hamming_distance, symbol_1_leading_avg, symbol_1_trailing_avg, symbol_1_dc_offset, symbol_1_ramp,
             preamble_hamming_distance, leading_dc_offset, trailing_dc_offset, dc_offset, ramp_diff, ramp_diff_abs
@@ -283,7 +283,7 @@ impl Sync {
         // rules.. onece in sync frame stats, the buffer_offset is the end of
         // the preamble, or the start of the first sync bit.
         
-        while self.buffer.len() > (self.buffer_offset as f32 + self.samples_per_symbol * 2.0) as usize {
+        while self.buffer.len() > (self.search_offset as f32 + self.samples_per_symbol * 2.0) as usize {
 
             let event = match &self.state {
                 SyncState::Searching => self.process_searching(),
@@ -304,8 +304,6 @@ impl Sync {
                     let candidate_option = self.select_candidate();
                     match candidate_option {
                         Some(candidate) => {
-                            self.buffer.drain(0..self.buffer_offset);
-                            self.buffer_offset = 0;
                             SyncState::Sync
                         },
                         None => {
