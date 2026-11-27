@@ -1,6 +1,6 @@
 
 use num_complex::Complex32;
-use crate::dsp::{DemodSample, FrameResult, RealBlock, SampleBlock, fsk_demod, sync, xfirdec};
+use crate::dsp::{DecodedFrame, DemodSample, RealBlock, SampleBlock, fsk_demod, sync, xfirdec};
 
 pub struct WizeDemodulator {
     channel: u32,
@@ -24,26 +24,32 @@ impl WizeDemodulator {
         input_center_freq: u32,
         symbol_rate: u32,
         ntaps: usize,
-        preamble: u64,
-        preamble_len: usize,
+        preamble: u16,
+        sync_word: u16,
     ) -> Self {
 
+        assert!(decimation_factor > 0, "Decimation factor must be greater than zero");
+        assert!(symbol_rate > 0, "Symbol rate must be greater than zero");
+        assert!(input_sample_rate % decimation_factor == 0, "Sample rate must be divisible by stage_decimator_factor");
         let output_sample_rate = input_sample_rate / decimation_factor;
         let samples_per_symbol = output_sample_rate as f32 / symbol_rate as f32;
         let channel_freq = 169_393_750 + 12_500 * (channel + 1);
         let offset_freq = channel_freq as i32 - input_center_freq as i32;
 
-        assert!(input_sample_rate % decimation_factor == 0, "Sample rate must be divisible by stage_decimator_factor");
-        //assert!(output_sample_rate % symbol_rate == 0, "Post-decimation sample rate must be divisible by symbol rate");
         assert!(samples_per_symbol > 0.0, "Samples per symbol must be greater than 0");
+        assert!(output_sample_rate >= symbol_rate, "Sample rate must provide at least one sample per symbol");
         assert!(ntaps > 0, "Number of FIR taps must be greater than 0");
-        assert!(preamble_len > 0, "Preamble length must be greater than 0");
-        assert!(preamble < (1 << preamble_len), "Preamble value must fit within preamble length");
 
         // this is the pipeline.. translate frequency, decimate, demodulate, sync, crc check, output frame
         let fir = xfirdec::FreqTranslatingDirDecimator::new(offset_freq as f32, decimation_factor as usize, cutoff_freq as f32, ntaps, input_sample_rate as f32);
         let demod = fsk_demod::FskDemod::new();
-        let sync = sync::Sync::new(channel, samples_per_symbol);
+        let sync = sync::Sync::new(
+            channel,
+            output_sample_rate,
+            symbol_rate,
+            preamble,
+            sync_word,
+        );
  
         Self {
             channel,
@@ -68,7 +74,7 @@ impl WizeDemodulator {
         log::info!("[{}]   Post-decimation Sample Rate: {} Hz", self.channel, self.output_sample_rate);
     }
 
-    pub fn process_block(&mut self, input: &[Complex32]) -> Option<Vec<FrameResult>> {
+    pub fn process_block(&mut self, input: &[Complex32]) -> Vec<DecodedFrame> {
 
         // freuqency translate, FIR and decimation in one step.
         self.fir.process(input, &mut self.fir_output);
@@ -76,19 +82,20 @@ impl WizeDemodulator {
         // demodulate..
         self.demod.process(&self.fir_output, &mut self.demod_output);
 
-        self.sync.update(&self.demod_output);
-
-        None
+        self.sync.update(&self.demod_output)
 
     }
 
-    pub fn run(&mut self, rx: std::sync::mpsc::Receiver<SampleBlock>, result_tx: std::sync::mpsc::Sender<FrameResult>) {
+    pub fn run(&mut self, rx: std::sync::mpsc::Receiver<SampleBlock>, result_tx: std::sync::mpsc::Sender<DecodedFrame>) {
         while let Ok(block) = rx.recv() {
-            if let Some(results) = self.process_block(&block) {
-                for result in results {
-                    log::debug!("[{}] sending result - {:?}", self.channel, result);
-                    result_tx.send(result).unwrap();
-                }
+            for frame in self.process_block(&block) {
+                let frame_hex = frame
+                    .bytes
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
+                log::info!("[{}] sending raw frame - {}", self.channel, frame_hex);
+                result_tx.send(frame).unwrap();
             }
         }
         log::info!("[{}] Worker exiting", self.channel);

@@ -13,11 +13,10 @@ use num_complex::Complex32;
 use std::fs::File;
 use std::io::Read;
 use args::Args;
-use dsp::{WizeDemodulator,};
+use dsp::{DecodedFrame, WizeDemodulator};
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
-use dsp::FrameResult;
 use dsp::SampleBlock;
 use std::io::Write;
 use chrono::Local;
@@ -144,8 +143,8 @@ fn main() -> Result<()> {
 
     let stage3_sample_rate = stage2_sample_rate / stage2_decimation_factor;
 
-    let preamble = 0x5555F672;
-    let preamble_len = 32;
+    let preamble = 0x5555;
+    let sync_word = 0xF672;
     let block_size = 16_384;
     
     log::info!("wize_demodulator Info:");
@@ -164,17 +163,14 @@ fn main() -> Result<()> {
     log::info!("  --");
     log::info!("  stage3 sample rate: {} Hz", stage3_sample_rate);
     log::info!("  Symbol Rate: {} Hz", stage2_symbol_rate);
-    log::info!("  Preamble: {:#X}", preamble);
-    log::info!("  Preamble Length: {} bits", preamble_len);
+    log::info!("  Preamble: {:#06X}", preamble);
+    log::info!("  Sync Word: {:#06X}", sync_word);
     log::info!("  Block size: {} samples", block_size);
 
     assert!(stage1_sample_rate % stage1_decimation_factor == 0, "Sample rate must be divisible by stage_decimator_factor");
     assert!(stage1_sample_rate % stage2_symbol_rate == 0, "Post-decimation sample rate must be divisible by symbol rate");
     assert!(stage1_sample_rate / stage1_decimation_factor > 0, "Samples per symbol must be greater than 0");
     assert!(stage1_ntaps > 0, "Number of FIR taps must be greater than 0");
-    assert!(preamble_len > 0, "Preamble length must be greater than 0");
-    assert!(preamble < (1 << preamble_len), "Preamble value must fit within preamble length");
-    
     let mut stage1_fir = FreqTranslatingDirDecimator::new(
         stage1_offset as f32, //center_freq,
         stage1_decimation_factor as usize, //decimation,
@@ -191,7 +187,7 @@ fn main() -> Result<()> {
 
     let mut workers = Vec::new();
 
-    let (result_tx, result_rx) = mpsc::channel::<FrameResult>();
+    let (result_tx, result_rx) = mpsc::channel::<DecodedFrame>();
 
     for wize_channel in [0,2,3,4,5] {
 
@@ -209,7 +205,7 @@ fn main() -> Result<()> {
                 stage2_symbol_rate,
                 stage2_ntaps,
                 preamble,
-                preamble_len,
+                sync_word,
             );
 
             wize_demod.print_info();

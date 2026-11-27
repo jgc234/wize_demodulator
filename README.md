@@ -12,8 +12,10 @@ In summary:
 - filters out a narrow band for each channel - ignores channel 1.
 - decimates (downsamples) the signal in the filtering process.
 - does a sliding-window style match on the bitstream to find the preamble and sync
-- extracts the frame and does a quick CRC check.
+- verifies the sync word, collects length-delimited raw frame bytes, and checks their EN 13757 CRC-16 (frames are emitted even when the CRC is invalid).
 - outputs to MQTT or stdout.
+
+MQTT messages are JSON objects containing the Unix timestamp in milliseconds, packet length, channel, continuous hexadecimal frame data, hostname, SNR in dB, CRC validity, the preamble sample-error rate (`hamming_ratio`), and signal/noise power in dB. Power and SNR values are `null` when they cannot be calculated.
 
 It does not decode the frame into layers (MBus, Wize, Application).  Be aware that the actual customer
 meter data is encrypted and wont be readable, but there's many other interesting pieces of data that are 
