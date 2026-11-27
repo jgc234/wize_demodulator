@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use crate::dsp::{DecodedFrame, DemodSample};
 
 const SYNC_BITS: usize = 16;
-const MIN_PREAMBLE_SAMPLE_ACCURACY_PER_SYMBOL: f32 = 0.80;
+const MIN_PREAMBLE_SAMPLE_ACCURACY_PER_SYMBOL: f32 = 0.70;
 
 #[derive(Clone, Copy)]
 struct PreambleCandidate {
@@ -445,12 +445,7 @@ impl Sync {
         let mut frames = Vec::new();
 
         loop {
-            let state = std::mem::replace(
-                &mut self.state,
-                SyncState::Searching {
-                    next_start: self.samples.end_index,
-                },
-            );
+            let state = std::mem::replace(&mut self.state, SyncState::Searching {next_start: self.samples.end_index});
 
             match state {
 
@@ -483,10 +478,7 @@ impl Sync {
                         Self::rank_candidates_by_slope(&mut candidates);
                         let slope_candidate = candidates[0];
                         log::debug!("[{}] checking {} preamble candidates ranked by total_slope; selected sample {}", self.channel, candidates.len(), slope_candidate.start_sample);
-                        self.state = SyncState::ConfirmingCandidate {
-                            candidate: slope_candidate,
-                            resume_at,
-                        };
+                        self.state = SyncState::ConfirmingCandidate{candidate: slope_candidate, resume_at};
                         continue;
                     }
 
@@ -514,9 +506,7 @@ impl Sync {
                     Availability::Ready(true) => {
                         log::debug!("[{}] sync word confirmed at candidate sample {}", self.channel, candidate.start_sample);
                         let next_symbol = (self.preamble_bits.len() + SYNC_BITS) as u64;
-                        let next_sample = self
-                            .symbol_boundary(candidate.start_sample, next_symbol)
-                            .expect("frame sample index overflow");
+                        let next_sample = self.symbol_boundary(candidate.start_sample, next_symbol).expect("frame sample index overflow");
                         self.signal_power = PowerAccumulator::default();
                         self.signal_power_next_sample = candidate.start_sample;
                         self.accumulate_signal_power_until(next_sample);
