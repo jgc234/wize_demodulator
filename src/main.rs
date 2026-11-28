@@ -137,7 +137,7 @@ fn main() -> Result<()> {
     let stage2_centre_freq = sdr_center_freq + stage1_offset;
     let stage2_sample_rate = stage1_sample_rate / stage1_decimation_factor;
     let stage2_cutoff_freq = 4_000;
-    let stage2_decimation_factor = 4;
+    let stage2_decimation_factor = 6;
     let stage2_symbol_rate = 2_400;
     let stage2_ntaps = 141;
 
@@ -145,7 +145,7 @@ fn main() -> Result<()> {
 
     let preamble = 0x5555;
     let sync_word = 0xF672;
-    let block_size = 16_384;
+    let block_size =  (1024 * stage1_decimation_factor * stage2_decimation_factor) as usize;
     
     log::info!("wize_demodulator Info:");
     log::info!("  stage1 SDR Sample Rate: {} Hz", stage1_sample_rate);
