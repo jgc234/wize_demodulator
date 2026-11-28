@@ -4,6 +4,7 @@ use crate::dsp::{DecodedFrame, DemodSample};
 
 const SYNC_BITS: usize = 16;
 const MIN_PREAMBLE_SAMPLE_ACCURACY_PER_SYMBOL: f32 = 0.70;
+const NOISE_POWER_TIME_CONSTANT_SECONDS: f64 = 1.0;
 
 #[derive(Clone, Copy)]
 struct PreambleCandidate {
@@ -125,6 +126,15 @@ impl SampleBuffer {
         )
     }
 
+    fn power_at(&self, index: u64) -> Option<f64> {
+        if index < self.base_index || index >= self.end_index {
+            return None;
+        }
+
+        let index = usize::try_from(index - self.base_index).ok()?;
+        Some(f64::from(self.samples.get(index)?.iq.norm_sqr()))
+    }
+
     fn discard_before(&mut self, index: u64) {
         let discard_to = index.min(self.end_index);
         let count = usize::try_from(discard_to.saturating_sub(self.base_index))
@@ -144,11 +154,40 @@ struct PowerAccumulator {
 impl PowerAccumulator {
     fn add(&mut self, power_sum: f64, sample_count: u64) {
         self.power_sum += power_sum;
-        self.sample_count += sample_count;
+        self.sample_count = self
+            .sample_count
+            .checked_add(sample_count)
+            .expect("power sample count overflow");
     }
 
     fn average(&self) -> Option<f64> {
         (self.sample_count > 0).then(|| self.power_sum / self.sample_count as f64)
+    }
+}
+
+struct ExponentialMovingAverage {
+    average: Option<f64>,
+    alpha: f64,
+}
+
+impl ExponentialMovingAverage {
+    fn new(alpha: f64) -> Self {
+        assert!(alpha > 0.0 && alpha <= 1.0);
+        Self {
+            average: None,
+            alpha,
+        }
+    }
+
+    fn add(&mut self, value: f64) {
+        self.average = Some(match self.average {
+            Some(average) => self.alpha * value + (1.0 - self.alpha) * average,
+            None => value,
+        });
+    }
+
+    fn average(&self) -> Option<f64> {
+        self.average
     }
 }
 
@@ -160,7 +199,7 @@ pub struct Sync {
     sync_word: u16,
     samples: SampleBuffer,
     state: SyncState,
-    noise_power: PowerAccumulator,
+    noise_power: ExponentialMovingAverage,
     signal_power: PowerAccumulator,
     signal_power_next_sample: u64,
 }
@@ -180,6 +219,10 @@ impl Sync {
 
         log::info!("[{}] Synchronizer: {} preamble bits, {} sync bits, {} samples/symbol", channel, preamble_bits.len(), SYNC_BITS, sample_rate as f64 / symbol_rate as f64);
 
+        let sample_interval_over_time_constant =
+            1.0 / (f64::from(sample_rate) * NOISE_POWER_TIME_CONSTANT_SECONDS);
+        let noise_power_alpha = -(-sample_interval_over_time_constant).exp_m1();
+
         Self {
             channel,
             sample_rate,
@@ -188,7 +231,7 @@ impl Sync {
             sync_word,
             samples: SampleBuffer::default(),
             state: SyncState::Searching { next_start: 0 },
-            noise_power: PowerAccumulator::default(),
+            noise_power: ExponentialMovingAverage::new(noise_power_alpha),
             signal_power: PowerAccumulator::default(),
             signal_power_next_sample: 0,
         }
@@ -221,12 +264,13 @@ impl Sync {
             return;
         }
 
-        let sample_count = end_sample - start_sample;
-        let power_sum = self
-            .samples
-            .power_sum(start_sample, end_sample)
-            .expect("search noise range must remain in the sample buffer");
-        self.noise_power.add(power_sum, sample_count);
+        for sample_index in start_sample..end_sample {
+            let power = self
+                .samples
+                .power_at(sample_index)
+                .expect("search noise sample must remain in the sample buffer");
+            self.noise_power.add(power);
+        }
     }
 
     fn symbol_boundary(&self, origin: u64, symbol_index: u64) -> Option<u64> {
@@ -583,7 +627,7 @@ impl Sync {
 mod tests {
     use num_complex::Complex32;
 
-    use super::{Availability, PreambleCandidate, SYNC_BITS, Sync};
+    use super::{Availability, ExponentialMovingAverage, PreambleCandidate, SYNC_BITS, Sync};
     use crate::dsp::DemodSample;
 
     const PREAMBLE: u16 = 0x5555;
@@ -595,6 +639,17 @@ mod tests {
             .rev()
             .map(|bit| ((value >> bit) & 1) as u8)
             .collect()
+    }
+
+    #[test]
+    fn noise_power_ema_weights_recent_samples_more_heavily() {
+        let mut ema = ExponentialMovingAverage::new(0.5);
+        ema.add(2.0);
+        ema.add(4.0);
+        assert_eq!(ema.average(), Some(3.0));
+
+        ema.add(10.0);
+        assert_eq!(ema.average(), Some(6.5));
     }
 
     fn preamble_and_sync_bits() -> Vec<u8> {
