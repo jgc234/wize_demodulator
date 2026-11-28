@@ -137,7 +137,7 @@ fn main() -> Result<()> {
     let stage2_centre_freq = sdr_center_freq + stage1_offset;
     let stage2_sample_rate = stage1_sample_rate / stage1_decimation_factor;
     let stage2_cutoff_freq = 4_000;
-    let stage2_decimation_factor = 6;
+    let stage2_decimation_factor = 4;
     let stage2_symbol_rate = 2_400;
     let stage2_ntaps = 141;
 

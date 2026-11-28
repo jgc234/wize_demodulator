@@ -53,10 +53,7 @@ struct SampleBuffer {
 impl SampleBuffer {
     fn extend(&mut self, samples: &[DemodSample]) {
         self.samples.extend(samples.iter().cloned());
-        self.end_index = self
-            .end_index
-            .checked_add(samples.len() as u64)
-            .expect("demodulated sample index overflow");
+        self.end_index += samples.len() as u64;
     }
 
     fn discriminator_at(&self, index: u64) -> Option<f32> {
@@ -68,13 +65,9 @@ impl SampleBuffer {
         Some(self.samples.get(index)?.discriminator)
     }
 
-    fn sample_error_counts(
-        &self,
-        start: u64,
-        end: u64,
-        dc_offset: f32,
-        expected_bit: u8,
-    ) -> Option<(u64, u64)> {
+    // count the number of samples in a range that are not the expected bit.  also adjust values using dc_offset.  
+    //
+    fn sample_error_counts(&self, start: u64, end: u64, dc_offset: f32, expected_bit: u8) -> Option<(u64, u64)> {
         if start >= end || start < self.base_index || end > self.end_index {
             return None;
         }
@@ -86,13 +79,18 @@ impl SampleBuffer {
             .range(start..end)
             .filter(|sample| {
                 let adjusted = sample.discriminator - dc_offset;
-                adjusted == 0.0 || ((adjusted > 0.0) as u8) != expected_bit
+                (adjusted >= 0.0) as u8 != expected_bit
             })
             .count();
 
         Some((error_count as u64, (end - start) as u64))
     }
 
+    // Determine the symbol value from a range of samples.  Use a simple method
+    // of values above or below the zero line. More complex methods of trying to
+    // find a peak, or correlation to a shape seem to perform poorly with noisy
+    // signals.
+    
     fn majority_bit(&self, start: u64, end: u64, dc_offset: f32) -> Option<u8> {
         if start >= end || start < self.base_index || end > self.end_index {
             return None;
@@ -105,7 +103,7 @@ impl SampleBuffer {
 
         for sample in self.samples.range(start..end) {
             let adjusted = sample.discriminator - dc_offset;
-            above_zero += usize::from(adjusted > 0.0);
+            above_zero += usize::from(adjusted >= 0.0);
             below_zero += usize::from(adjusted < 0.0);
         }
 
@@ -132,9 +130,7 @@ impl SampleBuffer {
         let count = usize::try_from(discard_to.saturating_sub(self.base_index))
             .expect("discarded sample count does not fit in memory");
 
-        for _ in 0..count {
-            self.samples.pop_front();
-        }
+        self.samples.drain(0..count);
         self.base_index = discard_to;
     }
 }
@@ -148,7 +144,7 @@ struct PowerAccumulator {
 impl PowerAccumulator {
     fn add(&mut self, power_sum: f64, sample_count: u64) {
         self.power_sum += power_sum;
-        self.sample_count += 1;
+        self.sample_count += sample_count;
     }
 
     fn average(&self) -> Option<f64> {
@@ -170,35 +166,19 @@ pub struct Sync {
 }
 
 impl Sync {
-    pub fn new(
-        channel: u32,
-        sample_rate: u32,
-        symbol_rate: u32,
-        preamble: u16,
-        sync_word: u16,
-    ) -> Self {
+    pub fn new(channel: u32, sample_rate: u32, symbol_rate: u32, preamble: u16, sync_word: u16) -> Self {
         assert!(sample_rate > 0, "Sample rate must be greater than zero");
         assert!(symbol_rate > 0, "Symbol rate must be greater than zero");
-        assert!(
-            sample_rate >= symbol_rate,
-            "Sample rate must provide at least one sample per symbol"
-        );
+        assert!(sample_rate >= symbol_rate, "Sample rate must provide at least one sample per symbol");
+
         let preamble_bits: Vec<u8> = (0..u16::BITS)
             .rev()
-            .map(|bit| ((preamble >> bit) & 1) as u8)
+            .map(|bit| ((preamble >> bit) & 0x01) as u8)
             .collect();
-        assert!(
-            preamble_bits.contains(&0) && preamble_bits.contains(&1),
-            "Preamble must contain both symbol values to estimate DC offset"
-        );
 
-        log::info!(
-            "[{}] Synchronizer: {} preamble bits, {} sync bits, {} samples/symbol",
-            channel,
-            preamble_bits.len(),
-            SYNC_BITS,
-            sample_rate as f64 / symbol_rate as f64
-        );
+        assert!(preamble_bits.contains(&0) && preamble_bits.contains(&1), "Preamble must contain both symbol values to estimate DC offset");
+
+        log::info!("[{}] Synchronizer: {} preamble bits, {} sync bits, {} samples/symbol", channel, preamble_bits.len(), SYNC_BITS, sample_rate as f64 / symbol_rate as f64);
 
         Self {
             channel,
@@ -263,10 +243,24 @@ impl Sync {
         ))
     }
 
+    // TODO - have a look at at timing skew by looking at entry and exit
+    // values.. but this would only work if the bit pattern is alternating
+    // between successive bits.
+
     fn symbol_bit(&self, origin: u64, symbol_index: u64, dc_offset: f32) -> Option<u8> {
         let (start, end) = self.symbol_range(origin, symbol_index)?;
         self.samples.majority_bit(start, end, dc_offset)
     }
+
+    // This is a timing synchroniser that attemps to synchronise the whole
+    // preamble.  Instead of a hamming distance check, this method looks at
+    // minimising the slope between the entry and exit samples within a symbol
+    // window.  If they're misaligned, we can assume the timing is off.  This
+    // method only works with an alternating preample, so we could assume the
+    // preamble is fixed to 0x5555.
+
+    // we probably should calculate the dc_offset during the sample error counts
+    // rather than scanning the lot again.
 
     fn detect_preamble(&self, start_sample: u64) -> Availability<Option<PreambleCandidate>> {
         let Some(window_end) = self.symbol_boundary(start_sample, self.preamble_bits.len() as u64)
@@ -285,9 +279,7 @@ impl Sync {
             else {
                 return Availability::NeedMoreSamples;
             };
-            let Some((sample_errors, symbol_samples)) =
-                self.samples
-                    .sample_error_counts(symbol_start, symbol_end, 0.0, *expected_bit)
+            let Some((sample_errors, symbol_samples)) = self.samples.sample_error_counts(symbol_start, symbol_end, 0.0, *expected_bit)
             else {
                 return Availability::NeedMoreSamples;
             };
@@ -336,6 +328,10 @@ impl Sync {
         Availability::Ready(Some(candidate))
     }
 
+    // Calculate slope between edges, and dc-offset.  The slope is used for timing
+    // synchronisation, and the "dc-offset" is used to determine frequency
+    // correction.
+
     fn estimate_preamble_dc_offset(&self, start_sample: u64) -> Availability<(f32, f32)> {
         let mut edge_sums = [0.0_f32; 2];
         let mut edge_counts = [0_u32; 2];
@@ -381,6 +377,7 @@ impl Sync {
         });
     }
 
+    // decode the next two bytes and see if they match the sync value.
     fn confirm_sync(&self, candidate: PreambleCandidate) -> Availability<bool> {
         let first_symbol = self.preamble_bits.len() as u64;
         let Some((high_byte, next_symbol)) = self.decode_byte(candidate, first_symbol) else {
@@ -392,12 +389,7 @@ impl Sync {
         let detected_sync = u16::from_be_bytes([high_byte, low_byte]);
 
         if detected_sync != self.sync_word {
-            log::debug!(
-                "[{}]  mismatched sync word {:04X} instead of {:04X}",
-                self.channel,
-                detected_sync,
-                self.sync_word
-            );
+            log::debug!("[{}]  mismatched sync word {:04X} instead of {:04X}", self.channel, detected_sync, self.sync_word);
         }
 
         Availability::Ready(detected_sync == self.sync_word)
@@ -406,11 +398,7 @@ impl Sync {
     fn decode_byte(&self, candidate: PreambleCandidate, first_symbol: u64) -> Option<(u8, u64)> {
         let mut byte = 0_u8;
         for bit_index in 0..8_u64 {
-            let bit = self.symbol_bit(
-                candidate.start_sample,
-                first_symbol + bit_index,
-                candidate.dc_offset,
-            )?;
+            let bit = self.symbol_bit(candidate.start_sample, first_symbol + bit_index, candidate.dc_offset)?;
             byte = (byte << 1) | bit;
         }
         Some((byte, first_symbol + 8))
@@ -418,25 +406,15 @@ impl Sync {
 
     fn check_crc(&self, data: &[u8]) -> bool {
         if data.len() < 3 {
-            log::warn!(
-                "[{}] cannot check CRC: frame has {} bytes, expected length byte and 2 CRC bytes",
-                self.channel,
-                data.len()
-            );
+            log::warn!("[{}] cannot check CRC: frame has {} bytes, expected length byte and 2 CRC bytes", self.channel, data.len());
             return false;
         }
 
         let calculated = crc16::State::<crc16::EN_13757>::calculate(&data[..data.len() - 2]);
-        let received = (u16::from(data[data.len() - 2]) << 8) | u16::from(data[data.len() - 1]);
+        let received = (data[data.len() - 2] as u16) << 8 | data[data.len() - 1] as u16;
         let valid = calculated == received;
 
-        log::debug!(
-            "[{}] CRC16 EN-13757: calculated={:04X}, received={:04X}, valid={}",
-            self.channel,
-            calculated,
-            received,
-            valid
-        );
+        log::debug!("[{}] CRC16 EN-13757: calculated={:04X}, received={:04X}, valid={}", self.channel, calculated, received, valid);
 
         valid
     }

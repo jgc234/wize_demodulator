@@ -40,7 +40,8 @@ impl WizeDemodulator {
         assert!(output_sample_rate >= symbol_rate, "Sample rate must provide at least one sample per symbol");
         assert!(ntaps > 0, "Number of FIR taps must be greater than 0");
 
-        // this is the pipeline.. translate frequency, decimate, demodulate, sync, crc check, output frame
+        // this is the pipeline.. translate frequency, decimate, demodulate,
+        // sync, crc check, output frame 
         let fir = xfirdec::FreqTranslatingDirDecimator::new(offset_freq as f32, decimation_factor as usize, cutoff_freq as f32, ntaps, input_sample_rate as f32);
         let demod = fsk_demod::FskDemod::new();
         let sync = sync::Sync::new(
